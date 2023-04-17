@@ -1,0 +1,87 @@
+version: "3.9"
+
+services:
+  php:
+    image: dunglas/frankenphp:latest
+    environment:
+      - SERVER_NAME=:80
+    restart: unless-stopped
+    ports:
+      - "80/tcp"
+      - "443/tcp"
+    volumes:
+      - ./symfony:/app
+    networks:
+      - symfony-traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.php.rule=Host(`${PHP_HOST:-php.localhost}`)"
+      - "traefik.http.routers.php.tls=true"
+
+  traefik:
+    image: traefik:v2.9
+    restart: unless-stopped
+    command:
+      - --api.insecure=true
+      - --api.dashboard=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --log.level=DEBUG
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8788:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+        - symfony-traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.middlewares.symfony-auth.forwardauth.address=https://${PHP_HOST:-php.localhost}/auth?redirect=https://${HTML_HOST:-html.localhost}"
+      - "traefik.http.middlewares.symfony-auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.symfony-auth.forwardauth.tls.insecureSkipVerify=true"
+
+  html:
+    image: nginx:latest
+    restart: unless-stopped
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html
+    networks:
+      - symfony-traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.html.rule=Host(`${HTML_HOST:-html.localhost}`)"
+      - "traefik.http.routers.html.tls=true"
+      - "traefik.http.routers.html.middlewares=symfony-auth"
+
+  mailer:
+    image: schickling/mailcatcher
+    networks:
+      - symfony-traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mailer.rule=Host(`${MAILER_HOST:-mailer.localhost}`)"
+      - "traefik.http.routers.mailer.tls=true"
+      - "traefik.http.services.mailcatcher.loadbalancer.server.port=1080"
+
+  adminer: # Use admin:admin to login for sqlite
+    image: ghcr.io/te4g/adminer-sqlite:4.8.1
+    restart: unless-stopped
+    environment:
+      - ADMINER_DESIGN=dracula
+    volumes:
+      - ./symfony/var:/var/www/html/symfony
+    networks:
+      - symfony-traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adminer.rule=Host(`${ADMINER_HOST:-adminer.localhost}`)"
+      - "traefik.http.routers.adminer.tls=true"
+
+networks:
+  symfony-traefik:

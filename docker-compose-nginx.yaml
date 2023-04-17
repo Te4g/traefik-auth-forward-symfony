@@ -1,0 +1,17 @@
+php:
+  image: webdevops/php-nginx:8.2-alpine
+  restart: unless-stopped
+  environment:
+    - WEB_DOCUMENT_ROOT=/app/public
+    - SERVER_NAME=php.localhost
+  ports:
+    - "80/tcp"
+    - "443/tcp"
+  volumes:
+    - ./symfony:/app
+  networks:
+    - symfony-traefik
+  labels:
+    - "traefik.enable=true"
+    - "traefik.http.routers.php.rule=Host(`${PHP_HOST:-php.localhost}`)"
+    - "traefik.http.routers.php.tls=true"
